@@ -1,0 +1,196 @@
+#!/bin/sh
+':' //; export NODE_PATH="$HOME/.node-magic/node_modules"; exec node "$0" "$@"
+;
+
+/**
+ * What is ^^^ ? It is a unique shebang which first executes this script with the
+ * sh interpreter, that is until it gets to the "exec" command, at which point the shell
+ * is replaced by the exec call. The exec call runs node and passes it the original
+ * arguments, so now node will take it's turn processing the same script, with one important
+ * difference, NODE_PATH was specified as an environmental variable. This let's us require
+ * modules that are installed in a different directory.
+ *
+ * The trick, though, is we still need the file to be valid javascript so the javascript
+ * parser doesn't choke on the first two lines of shell code. Node.js ignores shebangs so
+ * while it isn't valid js, the first line is still skipped. The second line, is more interesting. 
+ * In bash it executes first as a no-op ( : is a no-op) and then after the ;, it executes
+ * the remaining code to handoff the shell to node.
+ *
+ * In javascript then, the ':' is a string, which is fine like that, essentially a no-op,
+ * and then '//'' ends up quoting out the rest of the line which otherwise wouldn't
+ * be valid javascript.
+ *
+ * And the whole point of all this??? It allows us to use node-magic as an interpreter
+ * without having to have it wrapped in another script. And doing that would make it much
+ * trickier to install with a simple npm install.
+ */
+
+var child = require('child_process');
+var fs = require('fs');
+
+var REGEX_MATCH = /\/\*@import:([a-zA-Z0-9-_\/]+)\*\//,
+    REGEX_GLOBAL = /\/\*@import:([a-zA-Z0-9-_\/]+)\*\//g;
+
+(function(fn) {
+  var magicPath = setupEnvironment();
+ 
+  var scriptSource = loadSource(process.argv[2]);
+  var libsToInstall = parseImports(scriptSource, magicPath);
+
+  return (libsToInstall.length <= 0) ? fn() : doInstall(libsToInstall, fn);
+
+})(function() {
+  /**
+   * Once the environment is setup, we actually run the original script with node.
+   *   - As a child process, it will inherit the NODE_PATH enviromental variable
+   *     giving it access to the needed modules.
+   */
+  child.spawn('node', process.argv.slice(2), { stdio:'inherit' })
+    .on('exit', function(code) {
+      return process.exit(code);
+    });
+});
+   
+/**
+ * setupEnvironment -
+ *   Creates missing directories when first ran and ensures everything 
+ *   is setup correct
+ */
+function setupEnvironment() {
+  if (typeof child.execSync !== 'function') {
+    console.log('ERROR: node v0.12 is required.');
+    return process.exit(-1);
+  }
+
+  if (!process.env.HOME || !process.env.NODE_PATH) {
+    console.log('==================================================');
+    console.log('ERROR: Expected variables missing from ENV.');
+    console.log('HOME [%s] and NODE_PATH [%s] were expected.', process.env.HOME, process.env.NODE_PATH);
+    console.log('==================================================');
+    return process.exit(-1);
+  }
+  
+  var magicDir = process.env.HOME + '/.node-magic';
+
+  if (!fs.existsSync(magicDir)) {
+    fs.mkdirSync(magicDir);
+  }
+
+  if (!fs.existsSync(magicDir + '/node_modules')) {
+    fs.mkdirSync(magicDir + '/node_modules');
+  }
+
+  try {
+    fs.accessSync(magicDir + '/node_modules');
+  } catch(e) {
+    console.log('==================================================');
+    console.log('ERROR: node-magic does not have permission to write to its module cache (%s)', magicDir);
+    console.log('Error Message Thrown:', e);
+    console.log('==================================================');
+    return process.exit(-1);
+  }
+
+  return magicDir;
+}
+
+/**
+ * parseImports
+ *   - Takes a script file and finds any import statements
+ *     that may need to be downloaded.
+ * @param  {String} source
+ * @param  {String} magicPath - Location modules are cached
+ * @return {String} - spaced seperated list of modules that need downloading
+ */
+function parseImports(scriptSource, magicPath) {
+  var cache = listCachedModules(magicPath);
+  var isCached = function(l) {
+    return cache[l] === true;
+  };
+
+  var imports = scriptSource.match(REGEX_GLOBAL) || [];
+
+  return imports
+    .map(function(e) {
+      return e.match(REGEX_MATCH)[1];
+    })
+    .filter(function(l) {
+      return !isCached(l);
+    })
+    .join(' ');
+}
+
+/**
+ * loadSource
+ *   - Loads the contents of the provided script path into a string
+ * @return {String}
+ */
+function loadSource(script) {
+  try {
+    return fs.readFileSync(script).toString();
+  } catch(e) {
+    console.log('==================================================');
+    console.log('ERROR: Could not load specified file, [%s]', script);
+    console.log('Error Message Thrown:', e);
+    console.log('==================================================');
+    return process.exit(-1);
+  }
+}
+
+/**
+ * doInstall
+ *   - Installs a list of modules through npm
+ * @param  {String}   moduleList
+ * @param  {Function} cb
+ */
+function doInstall(moduleList, cb) {
+  console.log('Installing Modules: %s', moduleList.replace(' ', ', '));
+
+  var cmd = 'npm install --prefix ' + magicPath  + ' ' + moduleList;
+  
+  child.exec(cmd, function (error, stdout, stderr) {
+    if (error) {
+      console.log('==================================================');
+      console.log('Unknown error in doInstall: ', error);
+      console.log('==================================================');
+      return process.exit(-1);
+    }
+
+    if (stderr) { // npm install may still have succeeded
+      console.warn('Potential Error: ', stderr);
+    }
+  })
+  .on('exit', function(code) {
+    if (code !== 0) {
+      console.log("WARNING: Failed to install dependencies.");
+
+      return process.exit(code);
+    }
+
+    return cb();
+  });
+}
+
+/**
+ * listCachedModules
+ *   - Gets a list of all modules already saved to prevent downloading
+ *     duplicates
+ * @param  {String} magicPath
+ * @return {Object} - hashmap of modules downloaded 
+ */
+function listCachedModules(magicPath) {
+  var cmd = 'npm ls --depth 0 --parseable';
+  var output = child.execSync(cmd, { cwd: magicPath }).toString();
+  
+  return output.split('\n')
+    .map(function(l) {
+      var sp = l.split('/');
+      var name = sp[sp.length - 1];
+
+      return (name === '.node_modules') ? false : name;
+    })
+    .filter(Boolean)
+    .reduce(function(prev, cur) {
+      prev[cur] = true;
+      return prev;
+    }, {});
+}

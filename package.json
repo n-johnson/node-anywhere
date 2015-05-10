@@ -1,0 +1,19 @@
+{
+  "name": "node-anywhere",
+  "version": "0.1.1",
+  "description": "Importing packages made easy, include /*@import('express')*/ and you're done, node-anywhere will get the module and include it at runtime.",
+  "main": "node-anywhere",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/n-johnson/node-anywhere"
+  },
+  "author": "Nathan Johnson <node@njohnson.me>",
+  "license": "MIT",
+  "bin": {
+    "node-anywhere": "bin/node-anywhere"
+  },
+  "preferGlobal": true,
+  "engine": {
+    "node": ">=0.12"
+  }
+}
