@@ -1,5 +1,5 @@
 #!/bin/sh
-':' //; export NODE_PATH="$HOME/.node-magic/node_modules"; exec node "$0" "$@"
+':' //; export NODE_PATH="$HOME/.node-anywhere/node_modules"; exec node "$0" "$@"
 ;
 
 /**
@@ -20,7 +20,7 @@
  * and then '//'' ends up quoting out the rest of the line which otherwise wouldn't
  * be valid javascript.
  *
- * And the whole point of all this??? It allows us to use node-magic as an interpreter
+ * And the whole point of all this??? It allows us to use node-anywhere as an interpreter
  * without having to have it wrapped in another script. And doing that would make it much
  * trickier to install with a simple npm install.
  */
@@ -37,7 +37,7 @@ var REGEX_MATCH = /\/\*@import:([a-zA-Z0-9-_\/]+)\*\//,
   var scriptSource = loadSource(process.argv[2]);
   var libsToInstall = parseImports(scriptSource, magicPath);
 
-  return (libsToInstall.length <= 0) ? fn() : doInstall(libsToInstall, fn);
+  return (libsToInstall.length <= 0) ? fn() : doInstall(libsToInstall, magicPath, fn);
 
 })(function() {
   /**
@@ -70,7 +70,7 @@ function setupEnvironment() {
     return process.exit(-1);
   }
   
-  var magicDir = process.env.HOME + '/.node-magic';
+  var magicDir = process.env.HOME + '/.node-anywhere';
 
   if (!fs.existsSync(magicDir)) {
     fs.mkdirSync(magicDir);
@@ -84,7 +84,7 @@ function setupEnvironment() {
     fs.accessSync(magicDir + '/node_modules');
   } catch(e) {
     console.log('==================================================');
-    console.log('ERROR: node-magic does not have permission to write to its module cache (%s)', magicDir);
+    console.log('ERROR: node-anywhere does not have permission to write to its module cache (%s)', magicDir);
     console.log('Error Message Thrown:', e);
     console.log('==================================================');
     return process.exit(-1);
@@ -142,7 +142,7 @@ function loadSource(script) {
  * @param  {String}   moduleList
  * @param  {Function} cb
  */
-function doInstall(moduleList, cb) {
+function doInstall(moduleList, magicPath, cb) { 
   console.log('Installing Modules: %s', moduleList.replace(' ', ', '));
 
   var cmd = 'npm install --prefix ' + magicPath  + ' ' + moduleList;

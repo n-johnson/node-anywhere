@@ -1,6 +1,6 @@
 {
   "name": "node-anywhere",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Importing packages made easy, include /*@import('express')*/ and you're done, node-anywhere will get the module and include it at runtime.",
   "main": "node-anywhere",
   "repository": {
